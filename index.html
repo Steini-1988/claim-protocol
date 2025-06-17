@@ -1,0 +1,140 @@
+<!--
+  Uložte tento soubor jako index.html, nikoliv .jsx, a otevřete jej v prohlížeči.
+  Pokud na serveru vidíte jen seznam souborů nebo odkaz „dotazn-k", znamená to,
+  že soubor není rozpoznán jako výchozí index.html. Přejmenujte jej na index.html
+  nebo otevřete přímo file:///<cesta>/index.html.
+-->
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Reklamační dotazník</title>
+  <!-- jsPDF (UMD build) -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <!-- EmailJS -->
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3.5.0/dist/email.min.js"></script>
+</head>
+<body style="font-family: sans-serif; background: #f5f5f5; padding: 20px;">
+  <div id="root"></div>
+
+  <!-- React, ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <!-- Babel standalone pro JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Váš React komponent v JSX -->
+  <script type="text/babel" data-presets="env,react">
+    const { useState } = React;
+    const jsPDF = window.jspdf.jsPDF;
+    // EmailJS init
+    const SERVICE_ID  = 'YOUR_SERVICE_ID';
+    const TEMPLATE_ID = 'YOUR_TEMPLATE_ID';
+    const PUBLIC_KEY  = 'YOUR_PUBLIC_KEY';
+    emailjs.init(PUBLIC_KEY);
+
+    const COUNTRY_CODES = [
+      { code: "+420", label: "+420 (Česko)" },
+      { code: "+421", label: "+421 (Slovensko)" },
+      { code: "+43",  label: "+43 (Rakousko)" },
+      { code: "+49",  label: "+49 (Německo)" },
+      { code: "+44",  label: "+44 (UK)" },
+      { code: "+48",  label: "+48 (Polsko)" },
+    ];
+
+    const formatPhone = (cc, digits) => {
+      const clean = digits.replace(/\D/g, '');
+      switch (cc) {
+        case '+420': case '+421': case '+48':
+          return clean.replace(/(\d{3})(\d{3})(\d{0,3})/, (_, a,b,c) => [a,b,c].filter(Boolean).join(' '));
+        case '+44':
+          return clean.replace(/(\d{5})(\d{0,5})/, (_, a,b) => [a,b].filter(Boolean).join(' '));
+        default:
+          return clean;
+      }
+    };
+
+    function OnlineForm() {
+      const now   = new Date();
+      const today = now.toISOString().split('T')[0];
+      const time  = now.toTimeString().slice(0,5);
+      const [f, setF] = useState({
+        firstName:'', lastName:'', address:'', email:'',
+        countryCode:COUNTRY_CODES[0].code, phone:'',
+        message:'', damage:'', age:'', date:today, time
+      });
+      const upd=e=>setF({...f,[e.target.name]:e.target.value});
+      const updCountry=e=>setF({...f,countryCode:e.target.value,phone:formatPhone(e.target.value,f.phone)});
+      const updPhone=e=>setF({...f,phone:formatPhone(f.countryCode,e.target.value)});
+
+      const buildPdf=()=>{
+        const doc=new jsPDF({unit:'pt',format:'a4'});
+        doc.setFontSize(14);
+        doc.text('Reklamační dotazník',40,40);
+        const rows=[
+          `Jméno: ${f.firstName} ${f.lastName}`,
+          `Adresa: ${f.address}`,
+          `E‑mail: ${f.email}`,
+          `Telefon: ${f.countryCode} ${f.phone}`.trim(),
+          `Poškození: ${f.damage}`,
+          `Stáří (m): ${f.age}`,
+          `Datum: ${f.date}`,
+          `Čas: ${f.time}`,
+          'Popis závady:',f.message
+        ];
+        rows.reduce((y,r)=>{doc.text(doc.splitTextToSize(r,500),40,y);return y+24;},70);
+        return doc;
+      };
+
+      const blobToDataURL=b=>new Promise(r=>{const fr=new FileReader();fr.onloadend=()=>r(fr.result);fr.readAsDataURL(b);});
+      const handleSubmit=async e=>{
+        e.preventDefault();
+        const pdfBlob=buildPdf().output('blob');
+        const base64=await blobToDataURL(pdfBlob);
+        if(!SERVICE_ID||!TEMPLATE_ID){buildPdf().save(`reklamace_${Date.now()}.pdf`);return;}
+        emailjs.send(SERVICE_ID,TEMPLATE_ID,{to_email:'ondrej.steinhauser@gmail.com',attachment:base64})
+          .then(()=>alert('Email odeslán.')).catch(err=>alert('Chyba: '+err.text));
+      };
+
+      const inputStyle={width:'100%',padding:'6px 8px',margin:'4px 0 12px',border:'1px solid #ccc',borderRadius:4};
+      return(
+        <form onSubmit={handleSubmit} style={{maxWidth:560,margin:'0 auto',background:'#fff',padding:24,borderRadius:12,boxShadow:'0 2px 8px rgba(0,0,0,0.1)'}}>
+          <h1 style={{textAlign:'center',marginBottom:16}}>Reklamační dotazník</h1>
+          <label>Jméno <input name="firstName" required value={f.firstName} onChange={upd} style={inputStyle} /></label>
+<label>Příjmení <input name="lastName" required value={f.lastName} onChange={upd} style={inputStyle} /></label>
+<label>Adresa <input name="address" required value={f.address} onChange={upd} style={inputStyle} /></label>
+<label>E‑mail <input type="email" name="email" required value={f.email} onChange={upd} style={inputStyle} /></label>
+<label>Tel. číslo
+  <div style={{display:'flex', gap:8}}>
+    <select value={f.countryCode} onChange={updCountry} style={{padding:6}}>
+      {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+    </select>
+    <input name="phone" value={f.phone} onChange={updPhone} pattern="[0-9 ]{5,20}" style={{...inputStyle, flex:1}} />
+  </div>
+</label>
+<label>Popis závady <textarea name="message" rows={4} required value={f.message} onChange={upd} style={{...inputStyle, height:90}} /></label>
+<label>Poškození
+  <select name="damage" required value={f.damage} onChange={upd} style={inputStyle}>
+    <option value="">-- Vyberte --</option>
+    <option value="ano">Ano</option>
+    <option value="ne">Ne</option>
+  </select>
+</label>
+<label>Stáří (v měsících) <input type="number" name="age" min="0" required value={f.age} onChange={upd} style={inputStyle} /></label>
+<div style={{display:'flex', gap:8}}>
+  <label style={{flex:1}}>Datum <input type="date" value={f.date} readOnly style={inputStyle} /></label>
+  <label style={{flex:1}}>Čas <input type="time" value={f.time} readOnly style={inputStyle} /></label>
+</div>
+          <div style={{display:'flex',gap:12}}>
+            <button type='button' onClick={()=>buildPdf().save(`reklamace_${Date.now()}.pdf`)} style={{...inputStyle,flex:1,background:'#10b981',color:'#fff',cursor:'pointer'}}>Stáhnout PDF</button>
+            <button type='submit' style={{...inputStyle,flex:1,background:'#2563eb',color:'#fff',cursor:'pointer'}}>Odeslat</button>
+          </div>
+        </form>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(<OnlineForm/>);
+  </script>
+</body>
+</html>
